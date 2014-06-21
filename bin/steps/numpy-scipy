@@ -9,6 +9,8 @@
 #
 # This script is invoked by [`bin/compile`](/).
 
+set -x 
+
 VENDORED_GIT_NAME="npscipy-binaries"
 VENDORED_GIT_REPO="git://github.com/thenovices/${VENDORED_GIT_NAME}.git"
 # The location of the pre-compiled atlas/lapack/blas/gfortran binaries.
