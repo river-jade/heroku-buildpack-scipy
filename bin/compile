@@ -232,7 +232,7 @@ bpwatch stop pylibmc_install
 
 # Numpy/scipy support
 bpwatch start numpy-scipy
-  sub-env source $BIN_DIR/steps/numpy-scipy
+  sub-env $BIN_DIR/steps/numpy-scipy
 bpwatch stop numpy-scipy
 
 # Install Mercurial if it appears to be required.
