@@ -8,7 +8,6 @@
 set -eo pipefail
 
 export_env_dir() {
-  echo "env dir: $1"
   env_dir=$1
   whitelist_regex=${2:-''}
   blacklist_regex=${3:-'^(PATH|GIT_DIR|CPATH|CPPATH|LD_PRELOAD|LIBRARY_PATH)$'}
@@ -235,6 +234,8 @@ bpwatch stop pylibmc_install
 bpwatch start numpy-scipy
   sub-env $BIN_DIR/steps/numpy-scipy
 bpwatch stop numpy-scipy
+
+echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
 
 # Install Mercurial if it appears to be required.
 if (grep -Fiq "hg+" requirements.txt) then
