@@ -87,7 +87,7 @@ sub-env() {
       done
     fi
 
-    $1
+    source $1
 
   )
 }
