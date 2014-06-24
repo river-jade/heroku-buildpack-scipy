@@ -8,6 +8,7 @@
 set -eo pipefail
 
 export_env_dir() {
+  echo "env dir: $1"
   env_dir=$1
   whitelist_regex=${2:-''}
   blacklist_regex=${3:-'^(PATH|GIT_DIR|CPATH|CPPATH|LD_PRELOAD|LIBRARY_PATH)$'}
@@ -265,7 +266,7 @@ bpwatch stop collectstatic
 set-env PATH '$HOME/.heroku/python/bin:$PATH'
 set-env PYTHONUNBUFFERED true
 set-env PYTHONHOME /app/.heroku/python
-set-env LIBRARY_PATH /app/.heroku/vendor/lib:/app/.heroku/python/lib
+set-env LIBRARY_PATH /app/.heroku/vendor/lib:/app/.heroku/python/lib:$LIBRARY_PATH
 set-env LD_LIBRARY_PATH '/app/.heroku/vendor/lib:/app/.heroku/python/lib:$LD_LIBRARY_PATH'
 set-default-env LANG en_US.UTF-8
 set-default-env PYTHONHASHSEED random
