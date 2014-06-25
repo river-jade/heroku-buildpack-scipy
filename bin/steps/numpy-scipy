@@ -93,3 +93,5 @@ if (grep -iq -e "numpy" -e "scipy" $REQ_TXT) then
   fi
   cd ..
 fi
+
+echo "LD_LIBRARY_PATH=$"LD_LIBRARY_PATH"
