@@ -235,9 +235,6 @@ bpwatch start numpy-scipy
   sub-env $BIN_DIR/steps/numpy-scipy
 bpwatch stop numpy-scipy
 
-export LD_LIBRARY_PATH=/app/.heroku/vendor/lib/atlas-base:/app/.heroku/vendor/lib/atlas-base/atlas:$LD_LIBRARY_PATH
-echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
-
 # Install Mercurial if it appears to be required.
 if (grep -Fiq "hg+" requirements.txt) then
   bpwatch start mercurial_install
