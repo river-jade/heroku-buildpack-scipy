@@ -39,11 +39,13 @@ CACHED_DIRS=".heroku"
 VIRTUALENV_LOC=".heroku/venv"
 LEGACY_TRIGGER="lib/python2.7"
 PROFILE_PATH="$BUILD_DIR/.profile.d/python.sh"
+WEBCONCURRENCY_PROFILE_PATH="$BUILD_DIR/.profile.d/python.webconcurrency.sh"
 
-DEFAULT_PYTHON_VERSION="python-2.7.7"
+DEFAULT_PYTHON_VERSION="python-2.7.9"
+DEFAULT_PYTHON_STACK="cedar"
 PYTHON_EXE="/app/.heroku/python/bin/python"
-PIP_VERSION="1.5.6"
-SETUPTOOLS_VERSION="3.6"
+PIP_VERSION="6.0.6"
+SETUPTOOLS_VERSION="11.3.1"
 
 # Setup bpwatch
 export PATH=$PATH:$ROOT_DIR/vendor/bpwatch
@@ -51,9 +53,13 @@ LOGPLEX_KEY="t.b90d9d29-5388-4908-9737-b4576af1d4ce"
 export BPWATCH_STORE_PATH=$CACHE_DIR/bpwatch.json
 BUILDPACK_VERSION=v28
 
+# Setup pip-pop (pip-diff)
+export PATH=$PATH:$ROOT_DIR/vendor/pip-pop
+
 # Support Anvil Build_IDs
 [ ! "$SLUG_ID" ] && SLUG_ID="defaultslug"
 [ ! "$REQUEST_ID" ] && REQUEST_ID=$SLUG_ID
+[ ! "$STACK" ] && STACK=$DEFAULT_PYTHON_STACK
 
 # Sanitizing environment variables.
 unset GIT_DIR PYTHONHOME PYTHONPATH LD_LIBRARY_PATH LIBRARY_PATH
@@ -114,13 +120,19 @@ bpwatch stop pre_compile
 
 # If no requirements given, assume `setup.py develop`.
 if [ ! -f requirements.txt ]; then
-  puts-step "No requirements.txt provided; assuming dist package."
   echo "-e ." > requirements.txt
 fi
 
 # Sticky runtimes.
 if [ -f $CACHE_DIR/.heroku/python-version ]; then
   DEFAULT_PYTHON_VERSION=$(cat $CACHE_DIR/.heroku/python-version)
+fi
+
+# Stack fallback for non-declared caches.
+if [ -f $CACHE_DIR/.heroku/python-stack ]; then
+  CACHED_PYTHON_STACK=$(cat $CACHE_DIR/.heroku/python-stack)
+else
+  CACHED_PYTHON_STACK=$DEFAULT_PYTHON_STACK
 fi
 
 # If no runtime given, assume default version.
@@ -151,96 +163,28 @@ set -e
 
 mkdir -p $(dirname $PROFILE_PATH)
 
-set +e
-PYTHON_VERSION=$(cat runtime.txt)
-
 # Install Python.
-if [ -f .heroku/python-version ]; then
-  if [ ! $(cat .heroku/python-version) = $PYTHON_VERSION ]; then
-    bpwatch start uninstall_python
-      puts-step "Found $(cat .heroku/python-version), removing."
-      rm -fr .heroku/python
-    bpwatch stop uninstall_python
-  else
-    SKIP_INSTALL=1
-  fi
-fi
+source $BIN_DIR/steps/python
 
+# Sanity check for setuptools/distribute.
+source $BIN_DIR/steps/setuptools
 
-if [ ! "$SKIP_INSTALL" ]; then
-  bpwatch start install_python
-    puts-step "Preparing Python runtime ($PYTHON_VERSION)"
+# Uninstall removed dependencies with Pip.
+source $BIN_DIR/steps/pip-uninstall
 
-    # Prepare destination directory.
-    mkdir -p .heroku/python
-
-    curl http://lang-python.s3.amazonaws.com/runtimes/$PYTHON_VERSION.tar.gz -s | tar zxv -C .heroku/python &> /dev/null
-    if [[ $? != 0 ]] ; then
-      puts-warn "Requested runtime ($PYTHON_VERSION) was not found."
-      puts-warn "Aborting.  More info: https://devcenter.heroku.com/articles/python-support"
-      exit 1
-    fi
-
-  bpwatch stop install_python
-
-  # Record for future reference.
-  echo $PYTHON_VERSION > .heroku/python-version
-  FRESH_PYTHON=true
-
-  hash -r
-else
-  puts-step "Using Python runtime ($PYTHON_VERSION)"
-fi
-
-# If Pip isn't up to date:
-if [ "$FRESH_PYTHON" ] || [[ ! $(pip --version) == *$PIP_VERSION* ]]; then
-  WORKING_DIR=$(pwd)
-
-  bpwatch start prepare_environment
-
-  bpwatch start install_setuptools
-    # Prepare it for the real world
-    puts-step "Installing Setuptools ($SETUPTOOLS_VERSION)"
-    cd $ROOT_DIR/vendor/
-    tar zxf setuptools-$SETUPTOOLS_VERSION.tar.gz
-    cd $ROOT_DIR/vendor/setuptools-$SETUPTOOLS_VERSION/
-    python setup.py install &> /dev/null
-    cd $WORKING_DIR
-  bpwatch stop install_setuptoools
-
-  bpwatch start install_pip
-    puts-step "Installing Pip ($PIP_VERSION)"
-
-    cd $ROOT_DIR/vendor/
-    tar zxf pip-$PIP_VERSION.tar.gz
-    cd $ROOT_DIR/vendor/pip-$PIP_VERSION/
-    python setup.py install &> /dev/null
-    cd $WORKING_DIR
-
-  bpwatch stop install_pip
-  bpwatch stop prepare_environment
-fi
-
-set -e
-hash -r
+# Mercurial support.
+source $BIN_DIR/steps/mercurial
 
 # Pylibmc support.
-# See [`bin/steps/pylibmc`](pylibmc.html).
-bpwatch start pylibmc_install
-  source $BIN_DIR/steps/pylibmc
-bpwatch stop pylibmc_install
+source $BIN_DIR/steps/pylibmc
+
+# Libffi support.
+source $BIN_DIR/steps/cryptography
 
 # Numpy/scipy support
 bpwatch start numpy-scipy
   sub-env $BIN_DIR/steps/numpy-scipy
 bpwatch stop numpy-scipy
-
-# Install Mercurial if it appears to be required.
-if (grep -Fiq "hg+" requirements.txt) then
-  bpwatch start mercurial_install
-    /app/.heroku/python/bin/pip install  mercurial | cleanup | indent
-  bpwatch stop mercurial_install
-fi
 
 # Install dependencies with Pip.
 puts-step "Installing dependencies using Pip ($PIP_VERSION)"
@@ -252,11 +196,11 @@ puts-step "Installing dependencies using Pip ($PIP_VERSION)"
 
 [ ! "$FRESH_PYTHON" ] && bpwatch stop pip_install
 [ "$FRESH_PYTHON" ] && bpwatch stop pip_install_first
+source $BIN_DIR/steps/pip-install
 
 # Django collectstatic support.
-bpwatch start collectstatic
-  sub-env $BIN_DIR/steps/collectstatic
-bpwatch stop collectstatic
+sub-env $BIN_DIR/steps/collectstatic
+
 
 # ### Finalize
 #
@@ -271,6 +215,8 @@ set-default-env LANG en_US.UTF-8
 set-default-env PYTHONHASHSEED random
 set-default-env PYTHONPATH /app/
 
+# Install sane-default script for WEB_CONCURRENCY environment variable.
+cp $ROOT_DIR/vendor/python.webconcurrency.sh $WEBCONCURRENCY_PROFILE_PATH
 
 # Experimental post_compile hook.
 bpwatch start post_compile
@@ -297,3 +243,16 @@ bpwatch start anvil_appdir_commit
 
 bpwatch stop anvil_appdir_commit
 bpwatch stop compile
+
+# Set context environment variables.
+# This is moved down here because for some reason, bpwatch `import os` fails
+# if this is placed further up in its original location. I don't know why that
+# error occurs. [brandon]
+set-env PATH '$HOME/.heroku/python/bin:$PATH'
+set-env PYTHONUNBUFFERED true
+set-env PYTHONHOME /app/.heroku/python
+set-env LIBRARY_PATH /app/.heroku/vendor/lib:/app/.heroku/python/lib
+set-env LD_LIBRARY_PATH '/app/.heroku/vendor/lib:/app/.heroku/python/lib:$LD_LIBRARY_PATH'
+set-default-env LANG en_US.UTF-8
+set-default-env PYTHONHASHSEED random
+set-default-env PYTHONPATH /app/
